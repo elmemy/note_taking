@@ -39,10 +39,14 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   Map<int, PageEditData> pageEdits = {};
   Path currentPath = Path();
   Offset? startCirclePosition;
+  Offset? startRectanglePosition;
   DrawingMode _drawingMode = DrawingMode.none;
 
   Color _freehandColor = Colors.black;
   Color _highlightColor = Colors.yellow.withOpacity(0.5);
+  Color _eraserColor = Colors.white; // Assuming background is white
+
+  List<DrawingAction> _undoStack = [];
 
   Future<void> _pickPdf() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -155,6 +159,8 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
           currentPath.moveTo(details.localPosition.dx, details.localPosition.dy);
         } else if (_drawingMode == DrawingMode.circle) {
           startCirclePosition = details.localPosition;
+        } else if (_drawingMode == DrawingMode.rectangle) {
+          startRectanglePosition = details.localPosition;
         }
       });
     }
@@ -177,8 +183,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
       setState(() {
         if (_drawingMode == DrawingMode.freehand) {
           currentEdits.freehandPaths.add(currentPath);
+          _undoStack.add(DrawingAction.freehand(currentPath));
         } else if (_drawingMode == DrawingMode.highlight) {
           currentEdits.highlightPaths.add(currentPath);
+          _undoStack.add(DrawingAction.highlight(currentPath));
         } else if (_drawingMode == DrawingMode.circle && startCirclePosition != null) {
           final endCirclePosition = details.localPosition;
           final radius = (startCirclePosition! - endCirclePosition).distance / 2;
@@ -187,8 +195,40 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             (startCirclePosition!.dy + endCirclePosition.dy) / 2,
           );
           currentEdits.circles.add(CircleShape(center: center, radius: radius));
+          _undoStack.add(DrawingAction.circle(center, radius));
+        } else if (_drawingMode == DrawingMode.rectangle && startRectanglePosition != null) {
+          final endRectanglePosition = details.localPosition;
+          final rect = Rect.fromPoints(startRectanglePosition!, endRectanglePosition);
+          currentEdits.rectangles.add(RectangleShape(rect: rect));
+          _undoStack.add(DrawingAction.rectangle(rect));
         }
         currentPath = Path();
+      });
+    }
+  }
+
+  void _undoLastAction() {
+    if (_undoStack.isNotEmpty) {
+      setState(() {
+        final lastAction = _undoStack.removeLast();
+        final currentEdits = pageEdits.putIfAbsent(_currentPage, () => PageEditData());
+
+        switch (lastAction.type) {
+          case DrawingActionType.freehand:
+            currentEdits.freehandPaths.remove(lastAction.path);
+            break;
+          case DrawingActionType.highlight:
+            currentEdits.highlightPaths.remove(lastAction.path);
+            break;
+          case DrawingActionType.circle:
+            currentEdits.circles.removeWhere((circle) =>
+            circle.center == lastAction.center && circle.radius == lastAction.radius);
+            break;
+          case DrawingActionType.rectangle:
+            currentEdits.rectangles.removeWhere((rect) =>
+            rect.rect == lastAction.rect);
+            break;
+        }
       });
     }
   }
@@ -331,6 +371,18 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               icon: Icon(Icons.color_lens),
               onPressed: () => _selectColor(DrawingMode.highlight),
             ),
+            IconButton(
+              icon: Icon(Icons.circle),
+              onPressed: () => _setDrawingMode(DrawingMode.circle),
+            ),
+            IconButton(
+              icon: Icon(Icons.rectangle),
+              onPressed: () => _setDrawingMode(DrawingMode.rectangle),
+            ),
+            IconButton(
+              icon: Icon(Icons.undo),
+              onPressed: _undoLastAction,
+            ),
           ],
         ],
       ),
@@ -363,6 +415,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                   freehandPaths: currentEdits.freehandPaths,
                   highlightPaths: currentEdits.highlightPaths,
                   circles: currentEdits.circles,
+                  rectangles: currentEdits.rectangles,
                   currentPath: currentPath,
                   drawingMode: _drawingMode,
                   freehandColor: _freehandColor,
@@ -442,7 +495,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   }
 }
 
-enum DrawingMode { none, freehand, highlight, circle }
+enum DrawingMode { none, freehand, highlight, circle, rectangle }
 
 class PageEditData {
   List<EditableTextItem> textItems = [];
@@ -450,6 +503,7 @@ class PageEditData {
   List<Path> freehandPaths = [];
   List<Path> highlightPaths = [];
   List<CircleShape> circles = [];
+  List<RectangleShape> rectangles = [];
 }
 
 class EditableTextItem {
@@ -489,10 +543,17 @@ class CircleShape {
   CircleShape({required this.center, required this.radius});
 }
 
+class RectangleShape {
+  final Rect rect;
+
+  RectangleShape({required this.rect});
+}
+
 class CombinedPainter extends CustomPainter {
   final List<Path> freehandPaths;
   final List<Path> highlightPaths;
   final List<CircleShape> circles;
+  final List<RectangleShape> rectangles;
   final Path currentPath;
   final DrawingMode drawingMode;
   final Color freehandColor;
@@ -502,6 +563,7 @@ class CombinedPainter extends CustomPainter {
     required this.freehandPaths,
     required this.highlightPaths,
     required this.circles,
+    required this.rectangles,
     required this.currentPath,
     required this.drawingMode,
     required this.freehandColor,
@@ -532,6 +594,10 @@ class CombinedPainter extends CustomPainter {
       canvas.drawCircle(circle.center, circle.radius, freehandPaint);
     }
 
+    for (var rectangle in rectangles) {
+      canvas.drawRect(rectangle.rect, freehandPaint);
+    }
+
     if (drawingMode == DrawingMode.freehand) {
       canvas.drawPath(currentPath, freehandPaint);
     } else if (drawingMode == DrawingMode.highlight) {
@@ -543,4 +609,37 @@ class CombinedPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     return true;
   }
+}
+
+enum DrawingActionType { freehand, highlight, circle, rectangle }
+
+class DrawingAction {
+  final DrawingActionType type;
+  final Path path;
+  final Offset center;
+  final double radius;
+  final Rect rect;
+
+  DrawingAction.freehand(this.path)
+      : type = DrawingActionType.freehand,
+        center = Offset.zero,
+        radius = 0.0,
+        rect = Rect.zero;
+
+  DrawingAction.highlight(this.path)
+      : type = DrawingActionType.highlight,
+        center = Offset.zero,
+        radius = 0.0,
+        rect = Rect.zero;
+
+  DrawingAction.circle(this.center, this.radius)
+      : type = DrawingActionType.circle,
+        path = Path(),
+        rect = Rect.zero;
+
+  DrawingAction.rectangle(this.rect)
+      : type = DrawingActionType.rectangle,
+        path = Path(),
+        center = Offset.zero,
+        radius = 0.0;
 }
