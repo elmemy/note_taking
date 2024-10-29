@@ -5,6 +5,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:image_picker/image_picker.dart';
 
 void main() {
   runApp(const PdfEditorApp());
@@ -81,6 +82,20 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         color: Colors.black,
       ));
     });
+  }
+
+  Future<void> _addImageItem() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        final currentEdits = pageEdits.putIfAbsent(_currentPage, () => PageEditData());
+        currentEdits.imageItems.add(EditableImageItem(
+          filePath: pickedFile.path,
+          position: const Offset(50, 50),
+        ));
+      });
+    }
   }
 
   void _toggleEditMode() {
@@ -287,6 +302,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             onPressed: _addTextItem,
           ),
           IconButton(
+            icon: Icon(Icons.image),
+            onPressed: _addImageItem,
+          ),
+          IconButton(
             icon: Icon(Icons.save),
             onPressed: _savePdf,
           ),
@@ -381,6 +400,33 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               ),
             ),
           ),
+          ...currentEdits.imageItems.map(
+                (item) => Positioned(
+              left: item.position.dx,
+              top: item.position.dy,
+              child: Draggable(
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Image.file(
+                    File(item.filePath),
+                    width: 100,
+                    height: 100,
+                  ),
+                ),
+                childWhenDragging: Container(),
+                onDragEnd: (dragDetails) {
+                  setState(() {
+                    item.position = dragDetails.offset;
+                  });
+                },
+                child: Image.file(
+                  File(item.filePath),
+                  width: 100,
+                  height: 100,
+                ),
+              ),
+            ),
+          ),
         ],
       )
           : Center(child: Text('No PDF selected')),
@@ -392,6 +438,7 @@ enum DrawingMode { none, freehand, highlight, circle }
 
 class PageEditData {
   List<EditableTextItem> textItems = [];
+  List<EditableImageItem> imageItems = [];
   List<Path> freehandPaths = [];
   List<Path> highlightPaths = [];
   List<CircleShape> circles = [];
@@ -413,6 +460,16 @@ class EditableTextItem {
   void editText(String newText) {
     text = newText;
   }
+}
+
+class EditableImageItem {
+  String filePath;
+  Offset position;
+
+  EditableImageItem({
+    required this.filePath,
+    required this.position,
+  });
 }
 
 class CircleShape {
