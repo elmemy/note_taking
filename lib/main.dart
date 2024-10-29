@@ -93,6 +93,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         currentEdits.imageItems.add(EditableImageItem(
           filePath: pickedFile.path,
           position: const Offset(50, 50),
+          scale: 1.0, // Initial scale of the image
         ));
       });
     }
@@ -404,25 +405,32 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                 (item) => Positioned(
               left: item.position.dx,
               top: item.position.dy,
-              child: Draggable(
-                feedback: Material(
-                  color: Colors.transparent,
-                  child: Image.file(
-                    File(item.filePath),
-                    width: 100,
-                    height: 100,
-                  ),
-                ),
-                childWhenDragging: Container(),
-                onDragEnd: (dragDetails) {
+              child: GestureDetector(
+                onScaleUpdate: (details) {
                   setState(() {
-                    item.position = dragDetails.offset;
+                    item.scale = (item.scale * details.scale).clamp(0.5, 3.0); // Limit zoom scale
                   });
                 },
-                child: Image.file(
-                  File(item.filePath),
-                  width: 100,
-                  height: 100,
+                child: Transform.scale(
+                  scale: item.scale,
+                  child: Draggable(
+                    feedback: Image.file(
+                      File(item.filePath),
+                      width: 100,
+                      height: 100,
+                    ),
+                    childWhenDragging: Container(),
+                    onDragEnd: (dragDetails) {
+                      setState(() {
+                        item.position = dragDetails.offset;
+                      });
+                    },
+                    child: Image.file(
+                      File(item.filePath),
+                      width: 100,
+                      height: 100,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -465,10 +473,12 @@ class EditableTextItem {
 class EditableImageItem {
   String filePath;
   Offset position;
+  double scale;
 
   EditableImageItem({
     required this.filePath,
     required this.position,
+    this.scale = 1.0,
   });
 }
 
