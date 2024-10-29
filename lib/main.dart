@@ -44,7 +44,9 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
 
   Color _freehandColor = Colors.black;
   Color _highlightColor = Colors.yellow.withOpacity(0.5);
-  Color _eraserColor = Colors.white; // Assuming background is white
+  double _freehandStrokeWidth = 2.0; // Default stroke width for freehand
+  double _rectangleStrokeWidth = 2.0; // Default stroke width for rectangles
+  double _circleStrokeWidth = 2.0; // Default stroke width for circles
 
   List<DrawingAction> _undoStack = [];
 
@@ -326,6 +328,78 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
     );
   }
 
+  void _setStrokeWidth(DrawingMode mode) {
+    // Declare a variable to hold the current stroke width
+    double currentStrokeWidth;
+
+    // Set the current stroke width based on the drawing mode
+    if (mode == DrawingMode.freehand) {
+      currentStrokeWidth = _freehandStrokeWidth;
+    } else if (mode == DrawingMode.rectangle) {
+      currentStrokeWidth = _rectangleStrokeWidth;
+    } else if (mode == DrawingMode.circle) {
+      currentStrokeWidth = _circleStrokeWidth;
+    } else {
+      return; // Exit if mode is not recognized
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Select Stroke Width for ${mode.toString().split('.').last}'),
+          content: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Slider(
+                    value: currentStrokeWidth,
+                    min: 1.0,
+                    max: 10.0,
+                    divisions: 9,
+                    label: currentStrokeWidth.round().toString(),
+                    onChanged: (value) {
+                      setState(() {
+                        currentStrokeWidth = value; // Update local variable
+                      });
+                    },
+                  ),
+                  Text('Current stroke width: ${currentStrokeWidth.toStringAsFixed(1)}'),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              child: Text('Save'),
+              onPressed: () {
+                setState(() {
+                  // Update the corresponding stroke width based on the mode
+                  if (mode == DrawingMode.freehand) {
+                    _freehandStrokeWidth = currentStrokeWidth;
+                  } else if (mode == DrawingMode.rectangle) {
+                    _rectangleStrokeWidth = currentStrokeWidth;
+                  } else if (mode == DrawingMode.circle) {
+                    _circleStrokeWidth = currentStrokeWidth;
+                  }
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final currentEdits = pageEdits[_currentPage] ?? PageEditData();
@@ -357,7 +431,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
           if (_isEditMode) ...[
             IconButton(
               icon: Icon(Icons.brush),
-              onPressed: () => _setDrawingMode(DrawingMode.freehand),
+              onPressed: () {
+                _setDrawingMode(DrawingMode.freehand);
+                _setStrokeWidth(DrawingMode.freehand);
+              },
             ),
             IconButton(
               icon: Icon(Icons.color_lens),
@@ -365,7 +442,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             ),
             IconButton(
               icon: Icon(Icons.highlight),
-              onPressed: () => _setDrawingMode(DrawingMode.highlight),
+              onPressed: () {
+                _setDrawingMode(DrawingMode.highlight);
+                _setStrokeWidth(DrawingMode.highlight);
+              },
             ),
             IconButton(
               icon: Icon(Icons.color_lens),
@@ -373,11 +453,17 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             ),
             IconButton(
               icon: Icon(Icons.circle),
-              onPressed: () => _setDrawingMode(DrawingMode.circle),
+              onPressed: () {
+                _setDrawingMode(DrawingMode.circle);
+                _setStrokeWidth(DrawingMode.circle);
+              },
             ),
             IconButton(
               icon: Icon(Icons.rectangle),
-              onPressed: () => _setDrawingMode(DrawingMode.rectangle),
+              onPressed: () {
+                _setDrawingMode(DrawingMode.rectangle);
+                _setStrokeWidth(DrawingMode.rectangle);
+              },
             ),
             IconButton(
               icon: Icon(Icons.undo),
@@ -405,6 +491,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               if (page != null) _onPageChanged(page);
             },
           ),
+          // CustomPaint area to draw
           if (_isEditMode)
             GestureDetector(
               onPanStart: _startDrawing,
@@ -420,10 +507,14 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                   drawingMode: _drawingMode,
                   freehandColor: _freehandColor,
                   highlightColor: _highlightColor,
+                  freehandStrokeWidth: _freehandStrokeWidth,
+                  rectangleStrokeWidth: _rectangleStrokeWidth,
+                  circleStrokeWidth: _circleStrokeWidth,
                 ),
                 size: Size.infinite,
               ),
             ),
+          // Draw existing text items
           ...currentEdits.textItems.map(
                 (item) => Positioned(
               left: item.position.dx,
@@ -454,14 +545,15 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               ),
             ),
           ),
+          // Draw existing image items
           ...currentEdits.imageItems.map(
                 (item) => Positioned(
               left: item.position.dx,
               top: item.position.dy,
               child: GestureDetector(
-                onScaleUpdate: (details) {
+                onPanUpdate: (details) {
                   setState(() {
-                    item.scale = (item.scale * details.scale).clamp(0.5, 3.0); // Limit zoom scale
+                    item.position += details.delta; // Move the image
                   });
                 },
                 child: Transform.scale(
@@ -558,6 +650,9 @@ class CombinedPainter extends CustomPainter {
   final DrawingMode drawingMode;
   final Color freehandColor;
   final Color highlightColor;
+  final double freehandStrokeWidth;
+  final double rectangleStrokeWidth;
+  final double circleStrokeWidth;
 
   CombinedPainter({
     required this.freehandPaths,
@@ -568,18 +663,31 @@ class CombinedPainter extends CustomPainter {
     required this.drawingMode,
     required this.freehandColor,
     required this.highlightColor,
+    required this.freehandStrokeWidth,
+    required this.rectangleStrokeWidth,
+    required this.circleStrokeWidth,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final freehandPaint = Paint()
       ..color = freehandColor
-      ..strokeWidth = 2.0
+      ..strokeWidth = freehandStrokeWidth
       ..style = PaintingStyle.stroke;
 
     final highlightPaint = Paint()
       ..color = highlightColor
-      ..strokeWidth = 6.0
+      ..strokeWidth = freehandStrokeWidth * 2 // Highlight can have a different width
+      ..style = PaintingStyle.stroke;
+
+    final rectanglePaint = Paint()
+      ..color = freehandColor // Same color for rectangles; you can customize
+      ..strokeWidth = rectangleStrokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final circlePaint = Paint()
+      ..color = freehandColor // Same color for circles; you can customize
+      ..strokeWidth = circleStrokeWidth
       ..style = PaintingStyle.stroke;
 
     for (var path in freehandPaths) {
@@ -591,11 +699,11 @@ class CombinedPainter extends CustomPainter {
     }
 
     for (var circle in circles) {
-      canvas.drawCircle(circle.center, circle.radius, freehandPaint);
+      canvas.drawCircle(circle.center, circle.radius, circlePaint);
     }
 
     for (var rectangle in rectangles) {
-      canvas.drawRect(rectangle.rect, freehandPaint);
+      canvas.drawRect(rectangle.rect, rectanglePaint);
     }
 
     if (drawingMode == DrawingMode.freehand) {
