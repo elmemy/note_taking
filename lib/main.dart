@@ -355,14 +355,28 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                 (item) => Positioned(
               left: item.position.dx,
               top: item.position.dy,
-              child: GestureDetector(
-                onTap: () {
-                  // Start editing the text
-                  _editTextItem(item);
+              child: Draggable(
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Text(
+                    item.text,
+                    style: TextStyle(color: item.color, fontSize: item.fontSize),
+                  ),
+                ),
+                childWhenDragging: Container(),
+                onDragEnd: (dragDetails) {
+                  setState(() {
+                    item.position = dragDetails.offset;
+                  });
                 },
-                child: Text(
-                  item.text,
-                  style: TextStyle(color: item.color, fontSize: item.fontSize),
+                child: GestureDetector(
+                  onTap: () {
+                    _editTextItem(item);
+                  },
+                  child: Text(
+                    item.text,
+                    style: TextStyle(color: item.color, fontSize: item.fontSize),
+                  ),
                 ),
               ),
             ),
