@@ -44,9 +44,9 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
 
   Color _freehandColor = Colors.black;
   Color _highlightColor = Colors.yellow.withOpacity(0.5);
-  double _freehandStrokeWidth = 2.0; // Default stroke width for freehand
-  double _rectangleStrokeWidth = 2.0; // Default stroke width for rectangles
-  double _circleStrokeWidth = 2.0; // Default stroke width for circles
+  double _freehandStrokeWidth = 2.0;
+  double _rectangleStrokeWidth = 2.0;
+  double _circleStrokeWidth = 2.0;
 
   List<DrawingAction> _undoStack = [];
 
@@ -99,7 +99,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         currentEdits.imageItems.add(EditableImageItem(
           filePath: pickedFile.path,
           position: const Offset(50, 50),
-          scale: 1.0, // Initial scale of the image
+          scale: 1.0,
         ));
       });
     }
@@ -170,11 +170,13 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
 
   void _updateDrawing(DragUpdateDetails details) {
     if (_isEditMode) {
-      setState(() {
-        if (_drawingMode == DrawingMode.freehand || _drawingMode == DrawingMode.highlight) {
+      if (_drawingMode == DrawingMode.freehand || _drawingMode == DrawingMode.highlight) {
+        setState(() {
           currentPath.lineTo(details.localPosition.dx, details.localPosition.dy);
-        }
-      });
+        });
+      } else if (_drawingMode == DrawingMode.erase) {
+        _eraseDrawing(details.localPosition);
+      }
     }
   }
 
@@ -207,6 +209,53 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         currentPath = Path();
       });
     }
+  }
+
+  void _setEraseMode() {
+    setState(() {
+      _drawingMode = DrawingMode.erase;
+    });
+  }
+
+  void _eraseDrawing(Offset position) {
+    final currentEdits = pageEdits[_currentPage] ?? PageEditData();
+
+    setState(() {
+      currentEdits.freehandPaths.removeWhere((path) {
+        final pathBounds = path.getBounds();
+        if (pathBounds.inflate(5).contains(position)) { // Add margin for easier touch detection
+          _undoStack.add(DrawingAction.freehand(path));
+          return true;
+        }
+        return false;
+      });
+
+      currentEdits.highlightPaths.removeWhere((path) {
+        final pathBounds = path.getBounds();
+        if (pathBounds.inflate(5).contains(position)) {
+          _undoStack.add(DrawingAction.highlight(path));
+          return true;
+        }
+        return false;
+      });
+
+      currentEdits.circles.removeWhere((circle) {
+        final circleBounds = Rect.fromCircle(center: circle.center, radius: circle.radius).inflate(5);
+        if (circleBounds.contains(position)) {
+          _undoStack.add(DrawingAction.circle(circle.center, circle.radius));
+          return true;
+        }
+        return false;
+      });
+
+      currentEdits.rectangles.removeWhere((rect) {
+        if (rect.rect.inflate(5).contains(position)) {
+          _undoStack.add(DrawingAction.rectangle(rect.rect));
+          return true;
+        }
+        return false;
+      });
+    });
   }
 
   void _undoLastAction() {
@@ -329,10 +378,8 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   }
 
   void _setStrokeWidth(DrawingMode mode) {
-    // Declare a variable to hold the current stroke width
     double currentStrokeWidth;
 
-    // Set the current stroke width based on the drawing mode
     if (mode == DrawingMode.freehand) {
       currentStrokeWidth = _freehandStrokeWidth;
     } else if (mode == DrawingMode.rectangle) {
@@ -340,7 +387,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
     } else if (mode == DrawingMode.circle) {
       currentStrokeWidth = _circleStrokeWidth;
     } else {
-      return; // Exit if mode is not recognized
+      return;
     }
 
     showDialog(
@@ -361,7 +408,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                     label: currentStrokeWidth.round().toString(),
                     onChanged: (value) {
                       setState(() {
-                        currentStrokeWidth = value; // Update local variable
+                        currentStrokeWidth = value;
                       });
                     },
                   ),
@@ -375,7 +422,6 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               child: Text('Save'),
               onPressed: () {
                 setState(() {
-                  // Update the corresponding stroke width based on the mode
                   if (mode == DrawingMode.freehand) {
                     _freehandStrokeWidth = currentStrokeWidth;
                   } else if (mode == DrawingMode.rectangle) {
@@ -398,7 +444,6 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -466,6 +511,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               },
             ),
             IconButton(
+              icon: Icon(Icons.delete),
+              onPressed: _setEraseMode,
+            ),
+            IconButton(
               icon: Icon(Icons.undo),
               onPressed: _undoLastAction,
             ),
@@ -491,7 +540,6 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               if (page != null) _onPageChanged(page);
             },
           ),
-          // CustomPaint area to draw
           if (_isEditMode)
             GestureDetector(
               onPanStart: _startDrawing,
@@ -553,7 +601,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               child: GestureDetector(
                 onPanUpdate: (details) {
                   setState(() {
-                    item.position += details.delta; // Move the image
+                    item.position += details.delta;
                   });
                 },
                 child: Transform.scale(
@@ -587,7 +635,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   }
 }
 
-enum DrawingMode { none, freehand, highlight, circle, rectangle }
+enum DrawingMode { none, freehand, highlight, circle, rectangle, erase }
 
 class PageEditData {
   List<EditableTextItem> textItems = [];
@@ -677,16 +725,16 @@ class CombinedPainter extends CustomPainter {
 
     final highlightPaint = Paint()
       ..color = highlightColor
-      ..strokeWidth = freehandStrokeWidth * 2 // Highlight can have a different width
+      ..strokeWidth = freehandStrokeWidth * 2
       ..style = PaintingStyle.stroke;
 
     final rectanglePaint = Paint()
-      ..color = freehandColor // Same color for rectangles; you can customize
+      ..color = freehandColor
       ..strokeWidth = rectangleStrokeWidth
       ..style = PaintingStyle.stroke;
 
     final circlePaint = Paint()
-      ..color = freehandColor // Same color for circles; you can customize
+      ..color = freehandColor
       ..strokeWidth = circleStrokeWidth
       ..style = PaintingStyle.stroke;
 
