@@ -182,7 +182,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         final currentEdits = pageEdits.putIfAbsent(_currentPage, () => PageEditData());
         currentEdits.audioItems.add(EditableAudioItem(
           filePath: _filePath!,
-          position: const Offset(50, 50),
+          position: const Offset(50, 50), // Adjust position as needed
         ));
       });
     }
@@ -689,6 +689,22 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
               ),
             ),
           // Draw existing text items
+
+          // Inside the Stack children in the PDF view:
+          ...currentEdits.audioItems.map(
+                (audioItem) => Positioned(
+              left: audioItem.position.dx,
+              top: audioItem.position.dy,
+              child: GestureDetector(
+                onTap: () => playLocalAudio(audioItem.filePath), // Play audio on tap
+                child: Icon(
+                  Icons.audiotrack,
+                  color: Colors.blue,
+                  size: 30, // Adjust size as needed
+                ),
+              ),
+            ),
+          ),
           ...currentEdits.textItems.map(
                 (item) => Positioned(
               left: item.position.dx,
