@@ -574,11 +574,18 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   @override
   Widget build(BuildContext context) {
     final currentEdits = pageEdits[_currentPage] ?? PageEditData();
+    final mediaQueryData = MediaQuery.of(context);
+    final isLandscape = mediaQueryData.orientation == Orientation.landscape;
+
+    // Set width and height based on landscape mode and iPad dimensions
+    final double width = isLandscape ? mediaQueryData.size.width * 0.8 : mediaQueryData.size.width;
+    final double height = isLandscape ? mediaQueryData.size.height * 0.8 : mediaQueryData.size.height;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('PDF Editor'),
         actions: [
+
           IconButton(
             icon: Icon(Icons.mic),
             onPressed: _startRecording,
@@ -612,6 +619,14 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             onPressed: _toggleEditMode,
           ),
           if (_isEditMode) ...[
+            IconButton(
+              icon: Icon(Icons.pan_tool), // Hand icon for scroll mode
+              onPressed: () {
+                setState(() {
+                  _isEditMode = false; // Disable edit mode to enable scroll
+                });
+              },
+            ),
             IconButton(
               icon: Icon(Icons.brush),
               onPressed: () {
@@ -662,27 +677,32 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
       body: _pdfPath != null
           ? Stack(
         children: [
-          PDFView(
-            filePath: _pdfPath!,
-            enableSwipe: !_isEditMode,
-            swipeHorizontal: false,
-            autoSpacing: false,
-            pageSnap: false,
-            onRender: (_pages) {
-              setState(() {
-                _totalPages = _pages!;
-                _isReady = true;
-              });
-            },
-            onPageChanged: (int? page, int? total) {
-              if (page != null) _onPageChanged(page);
-            },
+          Container(
+            width: MediaQuery.of(context).size.width,
+            height: MediaQuery.of(context).size.height,
+            child: PDFView(
+              filePath: _pdfPath!,
+              enableSwipe: true,
+              autoSpacing: true,
+              pageSnap: false,
+              fitPolicy: FitPolicy.BOTH, // Adjusts the PDF to fit both width and height
+              swipeHorizontal: true, // Enable horizontal swipe in landscape
+              onRender: (_pages) {
+                setState(() {
+                  _totalPages = _pages!;
+                  _isReady = true;
+                });
+              },
+              onPageChanged: (int? page, int? total) {
+                if (page != null) _onPageChanged(page);
+              },
+            ),
           ),
-          if (_isEditMode)
+            if (_isEditMode)
             GestureDetector(
-              onPanStart: _startDrawing,
-              onPanUpdate: _updateDrawing,
-              onPanEnd: _endDrawing,
+              onPanStart: _isEditMode ? _startDrawing : null,
+              onPanUpdate: _isEditMode ? _updateDrawing : null,
+              onPanEnd: _isEditMode ? _endDrawing : null,
               child: CustomPaint(
                 painter: CombinedPainter(
                   freehandPaths: currentEdits.freehandPaths,
@@ -697,9 +717,28 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
                   rectangleStrokeWidth: _rectangleStrokeWidth,
                   circleStrokeWidth: _circleStrokeWidth,
                 ),
-                size: Size.infinite,
+                size: Size(width, height), // Use dynamic size for landscape mode
               ),
-            ),
+            )
+          else
+              CustomPaint(
+                painter: CombinedPainter(
+                  freehandPaths: currentEdits.freehandPaths,
+                  highlightPaths: currentEdits.highlightPaths,
+                  circles: currentEdits.circles,
+                  rectangles: currentEdits.rectangles,
+                  currentPath: currentPath,
+                  drawingMode: _drawingMode,
+                  freehandColor: _freehandColor,
+                  highlightColor: _highlightColor,
+                  freehandStrokeWidth: _freehandStrokeWidth,
+                  rectangleStrokeWidth: _rectangleStrokeWidth,
+                  circleStrokeWidth: _circleStrokeWidth,
+                ),
+                size: Size(width, height), // Use dynamic size for landscape mode
+              ),
+
+
           // Draw existing text items
 
           // Inside the Stack children in the PDF view:

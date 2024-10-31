@@ -35,7 +35,7 @@ dependencies:
   pdf: ^3.9.1
   pdfx: ^2.3.0 # Updated to resolve naming conflicts between PdfDocument from multiple libraries
   # flutter_pdfview: ^1.2.3
-  printing: ^5.9.0
+  printing: ^5.6.0
   signature: ^5.2.1
   path_provider: ^2.0.11
   file_picker: ^8.1.3
