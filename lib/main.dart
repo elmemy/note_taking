@@ -6,7 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:record/record.dart';
 void main() {
   runApp(const PdfEditorApp());
 }
@@ -35,7 +37,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   int _currentPage = 0;
   bool _isReady = false;
   bool _isEditMode = false;
-
+  AudioPlayer audioPlayer = AudioPlayer();
   Map<int, PageEditData> pageEdits = {};
   Path currentPath = Path();
   Offset? startCirclePosition;
@@ -48,7 +50,12 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   double _rectangleStrokeWidth = 2.0;
   double _circleStrokeWidth = 2.0;
 
+  final Record _record = Record();
+  String? _filePath;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   List<DrawingAction> _undoStack = [];
+
 
   Future<void> _pickPdf() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -77,6 +84,111 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
       SnackBar(content: Text('PDF Saved at $newPath')),
     );
   }
+
+
+  // Method to start recording
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Microphone Permission'),
+          content: Text('Microphone access is permanently denied. Please enable it in settings.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Settings'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _startRecording() async {
+    if (await _record.hasPermission()) {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      _filePath = '${appDocDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _record.start(
+        path: _filePath,
+        encoder: AudioEncoder.aacLc,
+      );
+      setState(() {
+        _filePath = null; // Clear previous recordings
+      });
+    } else {
+      _showSettingsDialog();
+    }
+  }
+
+
+
+  Future<void> _stopRecording() async {
+    _filePath = await _record.stop();
+    playLocalAudio(_filePath!);
+    setState(() {});
+  }
+
+
+  Future<void> playLocalAudio(String filePath) async {
+    try {
+      final correctFilePath = await ensureFileExtension(filePath, 'm4a');
+      File file = File(correctFilePath);
+      if (await file.exists()) {
+        await Future.delayed(Duration(milliseconds: 500));
+        await audioPlayer.setSource(DeviceFileSource(correctFilePath));
+        await audioPlayer.resume();
+      } else {
+        print("File does not exist at path: $correctFilePath");
+      }
+    } catch (e) {
+      print("Error occurred during playback: $e");
+      _handlePlaybackError(e);
+    }
+  }
+
+
+  Future<String> ensureFileExtension(String filePath, String extension) async {
+    if (!filePath.endsWith(extension)) {
+      final newFilePath = "$filePath.$extension";
+      await File(filePath).rename(newFilePath);
+      return newFilePath;
+    }
+    return filePath;
+  }
+
+  void _handlePlaybackError(dynamic error) {
+    if (error.toString().contains("DarwinAudioError")) {
+      print("Audio playback failed on iOS. Check file format and encoding.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Audio playback failed. Verify the file format and encoding.')),
+      );
+    }
+  }
+
+
+
+  // Method to add audio item
+  void _addAudioItem() {
+    if (_filePath != null) {
+      setState(() {
+        final currentEdits = pageEdits.putIfAbsent(_currentPage, () => PageEditData());
+        currentEdits.audioItems.add(EditableAudioItem(
+          filePath: _filePath!,
+          position: const Offset(50, 50),
+        ));
+      });
+    }
+  }
+
+
 
   void _addTextItem() {
     setState(() {
@@ -356,12 +468,14 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
             ),
           ),
           actions: [
+
             TextButton(
               child: Text('Cancel'),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
+
             TextButton(
               child: Text('Save'),
               onPressed: () {
@@ -453,6 +567,18 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
       appBar: AppBar(
         title: Text('PDF Editor'),
         actions: [
+          IconButton(
+            icon: Icon(Icons.mic),
+            onPressed: _startRecording,
+          ),
+          IconButton(
+            icon: Icon(Icons.stop),
+            onPressed: _stopRecording,
+          ),
+          IconButton(
+            icon: Icon(Icons.audiotrack),
+            onPressed: _addAudioItem,
+          ),
           IconButton(
             icon: Icon(Icons.folder_open),
             onPressed: _pickPdf,
@@ -643,6 +769,7 @@ class PageEditData {
   List<Path> freehandPaths = [];
   List<Path> highlightPaths = [];
   List<CircleShape> circles = [];
+  List<EditableAudioItem> audioItems = [];
   List<RectangleShape> rectangles = [];
 }
 
@@ -798,4 +925,30 @@ class DrawingAction {
         path = Path(),
         center = Offset.zero,
         radius = 0.0;
+}
+
+// New class for EditableAudioItem
+class EditableAudioItem {
+  String filePath;
+  Offset position;
+
+  EditableAudioItem({
+    required this.filePath,
+    required this.position,
+  });
+}
+
+
+class MicrophonePermission {
+  static const platform = MethodChannel('com.example.microphone/permissions');
+
+  static Future<bool> checkMicrophonePermission() async {
+    try {
+      final bool isGranted = await platform.invokeMethod('checkMicrophonePermission');
+      return isGranted;
+    } on PlatformException catch (e) {
+      print("Failed to get permission: '${e.message}'.");
+      return false;
+    }
+  }
 }
