@@ -43,7 +43,7 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   Offset? startCirclePosition;
   Offset? startRectanglePosition;
   DrawingMode _drawingMode = DrawingMode.none;
-
+  Offset lastAudioPosition = Offset(50, 50); // Starting position for first audio icon
   Color _freehandColor = Colors.black;
   Color _highlightColor = Colors.yellow.withOpacity(0.5);
   double _freehandStrokeWidth = 2.0;
@@ -182,11 +182,23 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
         final currentEdits = pageEdits.putIfAbsent(_currentPage, () => PageEditData());
         currentEdits.audioItems.add(EditableAudioItem(
           filePath: _filePath!,
-          position: const Offset(50, 50), // Adjust position as needed
+          position: lastAudioPosition,
         ));
+
+        // Update the position for the next audio item
+        lastAudioPosition = Offset(
+          lastAudioPosition.dx + 20, // Adjust as needed
+          lastAudioPosition.dy + 20, // Adjust as needed
+        );
+
+        // Optional: Reset position if it goes off the visible PDF area
+        if (lastAudioPosition.dy > 500) { // Example threshold
+          lastAudioPosition = Offset(50, 50); // Reset to start
+        }
       });
     }
   }
+
 
 
 
