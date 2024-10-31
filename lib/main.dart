@@ -9,6 +9,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'dart:ui' as ui;
 void main() {
   runApp(const PdfEditorApp());
 }
@@ -70,21 +72,87 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
     }
   }
 
+  void _drawPathOnPdf(PdfPage page, Path path, PdfPen pen) {
+    final pathMetrics = path.computeMetrics();
+    for (final pathMetric in pathMetrics) {
+      final extractedPath = pathMetric.extractPath(0, pathMetric.length);
+      final pathPoints = <Offset>[];
+
+      extractedPath.computeMetrics().forEach((metric) {
+        pathPoints.add(metric.extractPath(0, metric.length).getBounds().topLeft);
+      });
+
+      for (int j = 0; j < pathPoints.length - 1; j++) {
+        final startPoint = pathPoints[j];
+        final endPoint = pathPoints[j + 1];
+        final adjustedStart = Offset(startPoint.dx, page.getClientSize().height - startPoint.dy);
+        final adjustedEnd = Offset(endPoint.dx, page.getClientSize().height - endPoint.dy);
+
+        page.graphics.drawLine(pen, adjustedStart, adjustedEnd);
+      }
+    }
+  }
+
+
   Future<void> _savePdf() async {
     if (_pdfPath == null) return;
 
-    final pdf = pw.Document();
-    List<int> bytes = await pdf.save();
-    Directory appDocDir = await getApplicationDocumentsDirectory();
+    final pdfDocument = PdfDocument(inputBytes: File(_pdfPath!).readAsBytesSync());
+
+    for (int i = 0; i < pdfDocument.pages.count; i++) {
+      final page = pdfDocument.pages[i];
+      final currentEdits = pageEdits[i] ?? PageEditData();
+
+      // Draw text items
+      for (var textItem in currentEdits.textItems) {
+        page.graphics.drawString(
+          textItem.text,
+          PdfStandardFont(PdfFontFamily.helvetica, textItem.fontSize),
+          brush: PdfSolidBrush(PdfColor(textItem.color.red, textItem.color.green, textItem.color.blue)),
+          bounds: Rect.fromLTWH(textItem.position.dx, textItem.position.dy, 200, 20),
+        );
+      }
+
+      // Draw image items
+      for (var imageItem in currentEdits.imageItems) {
+        final image = PdfBitmap(await File(imageItem.filePath).readAsBytes());
+        page.graphics.drawImage(
+          image,
+          Rect.fromLTWH(imageItem.position.dx, imageItem.position.dy, image.width.toDouble(), image.height.toDouble()),
+        );
+      }
+
+      // Draw freehand paths
+      final freehandPen = PdfPen(PdfColor(_freehandColor.red, _freehandColor.green, _freehandColor.blue), width: _freehandStrokeWidth);
+      for (var freehandPath in currentEdits.freehandPaths) {
+        _drawPathOnPdf(page, freehandPath, freehandPen);
+      }
+
+      // Draw highlight paths
+      final highlightPen = PdfPen(PdfColor(_highlightColor.red, _highlightColor.green, _highlightColor.blue, 128), width: _freehandStrokeWidth);
+      for (var highlightPath in currentEdits.highlightPaths) {
+        _drawPathOnPdf(page, highlightPath, highlightPen);
+      }
+
+      // Add audio icons
+      for (var audioItem in currentEdits.audioItems) {
+        page.graphics.drawString(
+          "🎵",
+          PdfStandardFont(PdfFontFamily.helvetica, 20),
+          brush: PdfSolidBrush(PdfColor(0, 0, 255)),
+          bounds: Rect.fromLTWH(audioItem.position.dx, audioItem.position.dy, 20, 20),
+        );
+      }
+    }
+
+    final appDocDir = await getApplicationDocumentsDirectory();
     String newPath = '${appDocDir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.pdf';
     File newPdf = File(newPath);
-    await newPdf.writeAsBytes(bytes, flush: true);
+    await newPdf.writeAsBytes(await pdfDocument.save());
+    pdfDocument.dispose();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('PDF Saved at $newPath')),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF Saved at $newPath')));
   }
-
 
   // Method to start recording
   void _showSettingsDialog() {

@@ -49,6 +49,7 @@ dependencies:
   audioplayers: 5.1.0
   dio: ^5.7.0
   record: ^4.4.1
+  syncfusion_flutter_pdf: ^27.1.57
 
 
 dev_dependencies:
