@@ -643,11 +643,10 @@ class _PdfEditorHomePageState extends State<PdfEditorHomePage> {
   Widget build(BuildContext context) {
     final currentEdits = pageEdits[_currentPage] ?? PageEditData();
     final mediaQueryData = MediaQuery.of(context);
-    final isLandscape = mediaQueryData.orientation == Orientation.landscape;
 
     // Set width and height based on landscape mode and iPad dimensions
-    final double width = isLandscape ? mediaQueryData.size.width * 0.8 : mediaQueryData.size.width;
-    final double height = isLandscape ? mediaQueryData.size.height * 0.8 : mediaQueryData.size.height;
+    final double width = mediaQueryData.size.width * 0.8 ;
+    final double height =  mediaQueryData.size.height * 0.8;
 
     return Scaffold(
       appBar: AppBar(
