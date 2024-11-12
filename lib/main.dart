@@ -1,383 +1,570 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:scribble/scribble.dart';
-import 'package:value_notifier_tools/value_notifier_tools.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_drawing_board/flutter_drawing_board.dart';
+import 'package:flutter_drawing_board/paint_contents.dart';
+import 'package:flutter_drawing_board/paint_extension.dart';
+
+
+Future<ui.Image> _getImage(String path) async {
+  final Completer<ImageInfo> completer = Completer<ImageInfo>();
+  final NetworkImage img = NetworkImage(path);
+  img.resolve(ImageConfiguration.empty).addListener(
+    ImageStreamListener((ImageInfo info, _) {
+      completer.complete(info);
+    }),
+  );
+
+  final ImageInfo imageInfo = await completer.future;
+
+  return imageInfo.image;
+}
+
+const Map<String, dynamic> _testLine1 = <String, dynamic>{
+  'type': 'StraightLine',
+  'startPoint': <String, dynamic>{
+    'dx': 68.94337550070736,
+    'dy': 62.05980083656557
+  },
+  'endPoint': <String, dynamic>{
+    'dx': 277.1373386828114,
+    'dy': 277.32029957032194
+  },
+  'paint': <String, dynamic>{
+    'blendMode': 3,
+    'color': 4294198070,
+    'filterQuality': 3,
+    'invertColors': false,
+    'isAntiAlias': false,
+    'strokeCap': 1,
+    'strokeJoin': 1,
+    'strokeWidth': 4.0,
+    'style': 1
+  }
+};
+
+const Map<String, dynamic> _testLine2 = <String, dynamic>{
+  'type': 'StraightLine',
+  'startPoint': <String, dynamic>{
+    'dx': 106.35164817830423,
+    'dy': 255.9575653134524
+  },
+  'endPoint': <String, dynamic>{
+    'dx': 292.76034659254094,
+    'dy': 92.125586665872
+  },
+  'paint': <String, dynamic>{
+    'blendMode': 3,
+    'color': 4294198070,
+    'filterQuality': 3,
+    'invertColors': false,
+    'isAntiAlias': false,
+    'strokeCap': 1,
+    'strokeJoin': 1,
+    'strokeWidth': 4.0,
+    'style': 1
+  }
+};
+
+/// Custom drawn triangles
+class Triangle extends PaintContent {
+  Triangle();
+
+  Triangle.data({
+    required this.startPoint,
+    required this.A,
+    required this.B,
+    required this.C,
+    required Paint paint,
+  }) : super.paint(paint);
+
+  factory Triangle.fromJson(Map<String, dynamic> data) {
+    return Triangle.data(
+      startPoint: jsonToOffset(data['startPoint'] as Map<String, dynamic>),
+      A: jsonToOffset(data['A'] as Map<String, dynamic>),
+      B: jsonToOffset(data['B'] as Map<String, dynamic>),
+      C: jsonToOffset(data['C'] as Map<String, dynamic>),
+      paint: jsonToPaint(data['paint'] as Map<String, dynamic>),
+    );
+  }
+
+  Offset startPoint = Offset.zero;
+
+  Offset A = Offset.zero;
+  Offset B = Offset.zero;
+  Offset C = Offset.zero;
+
+  @override
+  String get contentType => 'Triangle';
+
+  @override
+  void startDraw(Offset startPoint) => this.startPoint = startPoint;
+
+  @override
+  void drawing(Offset nowPoint) {
+    A = Offset(
+        startPoint.dx + (nowPoint.dx - startPoint.dx) / 2, startPoint.dy);
+    B = Offset(startPoint.dx, nowPoint.dy);
+    C = nowPoint;
+  }
+
+  @override
+  void draw(Canvas canvas, Size size, bool deeper) {
+    final Path path = Path()
+      ..moveTo(A.dx, A.dy)
+      ..lineTo(B.dx, B.dy)
+      ..lineTo(C.dx, C.dy)
+      ..close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  Triangle copy() => Triangle();
+
+  @override
+  Map<String, dynamic> toContentJson() {
+    return <String, dynamic>{
+      'startPoint': startPoint.toJson(),
+      'A': A.toJson(),
+      'B': B.toJson(),
+      'C': C.toJson(),
+      'paint': paint.toJson(),
+    };
+  }
+}
+
+/// Custom drawn image
+/// url: https://web-strapi.mrmilu.com/uploads/flutter_logo_470e9f7491.png
+const String _imageUrl =
+    'https://web-strapi.mrmilu.com/uploads/flutter_logo_470e9f7491.png';
+
+class ImageContent extends PaintContent {
+  ImageContent(this.image, {this.imageUrl = ''});
+
+  ImageContent.data({
+    required this.startPoint,
+    required this.size,
+    required this.image,
+    required this.imageUrl,
+    required Paint paint,
+  }) : super.paint(paint);
+
+  factory ImageContent.fromJson(Map<String, dynamic> data) {
+    return ImageContent.data(
+      startPoint: jsonToOffset(data['startPoint'] as Map<String, dynamic>),
+      size: jsonToOffset(data['size'] as Map<String, dynamic>),
+      imageUrl: data['imageUrl'] as String,
+      image: data['image'] as ui.Image,
+      paint: jsonToPaint(data['paint'] as Map<String, dynamic>),
+    );
+  }
+
+  Offset startPoint = Offset.zero;
+  Offset size = Offset.zero;
+  final String imageUrl;
+  final ui.Image image;
+
+  @override
+  String get contentType => 'ImageContent';
+
+  @override
+  void startDraw(Offset startPoint) => this.startPoint = startPoint;
+
+  @override
+  void drawing(Offset nowPoint) => size = nowPoint - startPoint;
+
+  @override
+  void draw(Canvas canvas, Size size, bool deeper) {
+    final Rect rect = Rect.fromPoints(startPoint, startPoint + this.size);
+    paintImage(canvas: canvas, rect: rect, image: image, fit: BoxFit.fill);
+  }
+
+  @override
+  ImageContent copy() => ImageContent(image);
+
+  @override
+  Map<String, dynamic> toContentJson() {
+    return <String, dynamic>{
+      'startPoint': startPoint.toJson(),
+      'size': size.toJson(),
+      'imageUrl': imageUrl,
+      'paint': paint.toJson(),
+    };
+  }
+}
 
 void main() {
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+    if (kReleaseMode) {
+      exit(1);
+    }
+  };
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Scribble',
-      theme: ThemeData.from(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple)),
-      home: const HomePage(title: 'Scribble'),
+      title: 'Drawing Test',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: const MyHomePage(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title});
-
-  final String title;
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({Key? key}) : super(key: key);
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  late ScribbleNotifier notifier;
+class _MyHomePageState extends State<MyHomePage> {
+  /// 绘制控制器
+  final List<DrawingController> _drawingControllers = [DrawingController()];
+
+  final TransformationController _transformationController =
+  TransformationController();
+
+  double _colorOpacity = 1;
+  int _currentPage = 0;
 
   @override
-  void initState() {
-    notifier = ScribbleNotifier();
-    super.initState();
+  void dispose() {
+    for (final controller in _drawingControllers) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: _buildActions(context),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 64),
-        child: Column(
-          children: [
-            Expanded(
-              child: Card(
-                clipBehavior: Clip.hardEdge,
-                margin: EdgeInsets.zero,
-                color: Colors.white,
-                surfaceTintColor: Colors.white,
-                child: Scribble(
-                  notifier: notifier,
-                  drawPen: true,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  _buildColorToolbar(context),
-                  const VerticalDivider(width: 32),
-                  _buildStrokeToolbar(context),
-                  const Expanded(child: SizedBox()),
-                  _buildPointerModeSwitcher(context),
-                ],
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
 
-  List<Widget> _buildActions(context) {
-    return [
-      ValueListenableBuilder(
-        valueListenable: notifier,
-        builder: (context, value, child) => IconButton(
-          icon: child as Icon,
-          tooltip: "Undo",
-          onPressed: notifier.canUndo ? notifier.undo : null,
-        ),
-        child: const Icon(Icons.undo),
-      ),
-      ValueListenableBuilder(
-        valueListenable: notifier,
-        builder: (context, value, child) => IconButton(
-          icon: child as Icon,
-          tooltip: "Redo",
-          onPressed: notifier.canRedo ? notifier.redo : null,
-        ),
-        child: const Icon(Icons.redo),
-      ),
-      IconButton(
-        icon: const Icon(Icons.clear),
-        tooltip: "Clear",
-        onPressed: notifier.clear,
-      ),
-      IconButton(
-        icon: const Icon(Icons.image),
-        tooltip: "Show PNG Image",
-        onPressed: () => _showImage(context),
-      ),
-      IconButton(
-        icon: const Icon(Icons.data_object),
-        tooltip: "Show JSON",
-        onPressed: () => _showJson(context),
-      ),
-    ];
-  }
-
-  void _showImage(BuildContext context) async {
-    final image = await notifier.renderImage();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Generated Image"),
-        content: SizedBox.expand(
-          child: Image.memory(image.buffer.asUint8List()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: Navigator.of(context).pop,
-            child: const Text("Close"),
-          ),
-          TextButton(
-            onPressed: () async {
-              final status = await Permission.storage.request();
-              if (status.isGranted) {
-                await _saveImageToGallery(image.buffer.asUint8List());
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Image saved to gallery")),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Permission denied")),
-                );
-              }
-            },
-            child: const Text("Save to Gallery"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _saveImageToGallery(Uint8List imageData) async {
-    try {
-      // Save the image to gallery
-      final result = await ImageGallerySaver.saveImage(
-        imageData,
-        quality: 100, // set to 100 for the highest quality
-      );
-
-      if (result['isSuccess']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Image saved to gallery")),
-        );
+  void _nextDrawing() {
+    setState(() {
+      if (_currentPage < _drawingControllers.length - 1) {
+        _currentPage++;
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to save image")),
-        );
+        // Add a new page if we've reached the last page
+        _drawingControllers.add(DrawingController());
+        _currentPage++;
       }
-    } on PlatformException catch (e) {
-      print("Error saving image: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error: unable to save image")),
+    });
+
+    print(_currentPage);
+  }
+
+
+  void _previousDrawing() {
+    setState(() {
+      _currentPage = (_currentPage - 1 + _drawingControllers.length) % _drawingControllers.length;
+    });
+  }
+  /// 获取画板数据 `getImageData()`
+  Future<void> _getImageData() async {
+    final Uint8List? data =
+    (await _drawingControllers[_currentPage].getImageData())?.buffer.asUint8List();
+    if (data == null) {
+      debugPrint('获取图片数据失败');
+      return;
+    }
+
+    if (mounted) {
+      showDialog<void>(
+        context: context,
+        builder: (BuildContext c) {
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+                onTap: () => Navigator.pop(c), child: Image.memory(data)),
+          );
+        },
       );
     }
   }
 
 
-  void _showJson(BuildContext context) {
+  void _editTextContent(TextContent textContent) {
+    TextEditingController _textController = TextEditingController(text: textContent.text);
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Sketch as JSON"),
-        content: SizedBox.expand(
-          child: SelectableText(
-            jsonEncode(notifier.currentSketch.toJson()),
-            autofocus: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Edit Text'),
+          content: TextField(
+            controller: _textController,
+            decoration: InputDecoration(hintText: "Enter new text"),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: Navigator.of(context).pop,
-            child: const Text("Close"),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStrokeToolbar(BuildContext context) {
-    return ValueListenableBuilder<ScribbleState>(
-      valueListenable: notifier,
-      builder: (context, state, _) => Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          for (final w in notifier.widths)
-            _buildStrokeButton(
-              context,
-              strokeWidth: w,
-              state: state,
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
             ),
+            TextButton(
+              child: Text('OK'),
+              onPressed: () {
+                setState(() {
+                  textContent.text = _textController.text;
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+  void _handleTap(TextContent textContent) {
+    _editTextContent(textContent);
+  }
+  /// 获取画板内容 Json `getJsonList()`
+  Future<void> _getJson() async {
+    jsonEncode(_drawingControllers[_currentPage].getJsonList());
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext c) {
+        return Center(
+          child: Material(
+            color: Colors.white,
+            child: InkWell(
+              onTap: () => Navigator.pop(c),
+              child: Container(
+                constraints:
+                const BoxConstraints(maxWidth: 500, maxHeight: 800),
+                padding: const EdgeInsets.all(20.0),
+                child: SelectableText(
+                  const JsonEncoder.withIndent('  ')
+                      .convert(_drawingControllers[_currentPage].getJsonList()),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 添加Json测试内容
+  void _addTestLine() {
+    _drawingControllers[_currentPage].addContent(StraightLine.fromJson(_testLine1));
+    _drawingControllers[_currentPage]
+        .addContents(<PaintContent>[StraightLine.fromJson(_testLine2)]);
+
+  }
+
+
+
+  void _restBoard() {
+    _transformationController.value = Matrix4.identity();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      backgroundColor: Colors.grey,
+      appBar: AppBar(
+        leading: PopupMenuButton<Color>(
+          icon: const Icon(Icons.color_lens),
+          onSelected: (ui.Color value) => _drawingControllers[_currentPage].setStyle(
+              color: value.withOpacity(_colorOpacity)),
+          itemBuilder: (_) {
+            return <PopupMenuEntry<ui.Color>>[
+              PopupMenuItem<Color>(
+                child: StatefulBuilder(
+                  builder: (BuildContext context,
+                      Function(void Function()) setState) {
+                    return Slider(
+                      value: _colorOpacity,
+                      onChanged: (double v) {
+                        setState(() => _colorOpacity = v);
+                        _drawingControllers[_currentPage].setStyle(
+                          color: _drawingControllers[_currentPage].drawConfig.value.color
+                              .withOpacity(_colorOpacity),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              ...Colors.accents.map((ui.Color color) {
+                return PopupMenuItem<ui.Color>(
+                    value: color,
+                    child: Container(width: 100, height: 50, color: color));
+              }),
+            ];
+          },
+        ),
+        title: const Text('Drawing Test'),
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        actions: <Widget>[
+          IconButton(icon: Icon(Icons.arrow_back), onPressed: _previousDrawing),
+          IconButton(icon: Icon(Icons.arrow_forward), onPressed: _nextDrawing),
+          IconButton(
+              icon: const Icon(Icons.line_axis), onPressed: _addTestLine),
+          IconButton(
+              icon: const Icon(Icons.javascript_outlined), onPressed: _getJson),
+          IconButton(icon: const Icon(Icons.check), onPressed: _getImageData),
+          IconButton(
+              icon: const Icon(Icons.restore_page_rounded),
+              onPressed: _restBoard),
         ],
       ),
-    );
-  }
+      body: Column(
+        children: <Widget>[
+          Expanded(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                return DrawingBoard(
+                  // boardPanEnabled: false,
+                  // boardScaleEnabled: false,
+                  key: ValueKey<int>(_currentPage), // Add this line
+                  transformationController: _transformationController,
+                  controller: _drawingControllers[_currentPage],
+                  background: Container(
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    color: Colors.white,
+                  ),
+                  showDefaultActions: true,
+                  showDefaultTools: true,
+                  defaultToolsBuilder: (Type t, _) {
+                    return DrawingBoard.defaultTools(t, _drawingControllers[_currentPage])
+                      ..insert(
+                        1,
+                        DefToolItem(
+                          icon: Icons.change_history_rounded,
+                          isActive: t == Triangle,
+                          onTap: () =>
+                              _drawingControllers[_currentPage].setPaintContent(Triangle()),
+                        ),
+                      )
+                      ..insert(
+                        2,
+                        DefToolItem(
+                          icon: Icons.image_rounded,
+                          isActive: t == ImageContent,
+                          onTap: () async {
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (BuildContext c) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              },
+                            );
 
-  Widget _buildStrokeButton(
-      BuildContext context, {
-        required double strokeWidth,
-        required ScribbleState state,
-      }) {
-    final selected = state.selectedWidth == strokeWidth;
-    return Padding(
-      padding: const EdgeInsets.all(4),
-      child: Material(
-        elevation: selected ? 4 : 0,
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: () => notifier.setStrokeWidth(strokeWidth),
-          customBorder: const CircleBorder(),
-          child: AnimatedContainer(
-            duration: kThemeAnimationDuration,
-            width: strokeWidth * 2,
-            height: strokeWidth * 2,
-            decoration: BoxDecoration(
-                color: state.map(
-                  drawing: (s) => Color(s.selectedColor),
-                  erasing: (_) => Colors.transparent,
-                ),
-                border: state.map(
-                  drawing: (_) => null,
-                  erasing: (_) => Border.all(width: 1),
-                ),
-                borderRadius: BorderRadius.circular(50.0)),
+                            try {
+                              _drawingControllers[_currentPage].setPaintContent(ImageContent(
+                                await _getImage(_imageUrl),
+                                imageUrl: _imageUrl,
+                              ));
+                            } catch (e) {
+                              // Handle error
+                            } finally {
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                              }
+                            }
+                          },
+                        ),
+                      )
+                      ..insert(
+                        3,
+                        DefToolItem(
+
+                          icon: Icons.text_fields,
+                          isActive: t == TextContent,
+                          onTap: () {
+                            final newTextContent = TextContent(
+                              "Sample Text",
+                              position: Offset(100, 100),
+                              paint: Paint()..color = Colors.black,
+                            );
+                            _handleTap(newTextContent); // Pass the created TextContent instance
+                            _drawingControllers[_currentPage].setPaintContent(newTextContent);
+                          },
+
+                        ),
+                      );
+                  },
+
+                );
+              },
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildColorToolbar(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: [
-        _buildColorButton(context, color: Colors.black),
-        _buildColorButton(context, color: Colors.red),
-        _buildColorButton(context, color: Colors.green),
-        _buildColorButton(context, color: Colors.blue),
-        _buildColorButton(context, color: Colors.yellow),
-        _buildEraserButton(context),
-      ],
-    );
-  }
-
-  Widget _buildPointerModeSwitcher(BuildContext context) {
-    return ValueListenableBuilder(
-        valueListenable: notifier.select(
-              (value) => value.allowedPointersMode,
-        ),
-        builder: (context, value, child) {
-          return SegmentedButton<ScribblePointerMode>(
-            multiSelectionEnabled: false,
-            emptySelectionAllowed: false,
-            onSelectionChanged: (v) => notifier.setAllowedPointersMode(v.first),
-            segments: const [
-              ButtonSegment(
-                value: ScribblePointerMode.all,
-                icon: Icon(Icons.touch_app),
-                label: Text("All pointers"),
-              ),
-              ButtonSegment(
-                value: ScribblePointerMode.penOnly,
-                icon: Icon(Icons.draw),
-                label: Text("Pen only"),
-              ),
-            ],
-            selected: {value},
-          );
-        });
-  }
-
-  Widget _buildEraserButton(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: notifier.select((value) => value is Erasing),
-      builder: (context, value, child) => ColorButton(
-        color: Colors.transparent,
-        outlineColor: Colors.black,
-        isActive: value,
-        onPressed: () => notifier.setEraser(),
-        child: const Icon(Icons.cleaning_services),
-      ),
-    );
-  }
-
-  Widget _buildColorButton(
-      BuildContext context, {
-        required Color color,
-      }) {
-    return ValueListenableBuilder(
-      valueListenable: notifier.select(
-              (value) => value is Drawing && value.selectedColor == color.value),
-      builder: (context, value, child) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: ColorButton(
-          color: color,
-          isActive: value,
-          onPressed: () => notifier.setColor(color),
-        ),
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: SelectableText(
+              'https://github.com/fluttercandies/flutter_drawing_board',
+              style: TextStyle(fontSize: 10, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class ColorButton extends StatelessWidget {
-  const ColorButton({
-    required this.color,
-    required this.isActive,
-    required this.onPressed,
-    this.outlineColor,
-    this.child,
-    super.key,
-  });
 
-  final Color color;
+class TextContent extends PaintContent {
+  TextContent(this.text, {required this.position, required Paint paint})
+      : super.paint(paint);
 
-  final Color? outlineColor;
-
-  final bool isActive;
-
-  final VoidCallback onPressed;
-
-  final Icon? child;
+  String text;
+  Offset position;
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: kThemeAnimationDuration,
-      decoration: ShapeDecoration(
-        shape: CircleBorder(
-          side: BorderSide(
-            color: switch (isActive) {
-              true => outlineColor ?? color,
-              false => Colors.transparent,
-            },
-            width: 2,
-          ),
-        ),
+  String get contentType => 'TextContent';
+
+  @override
+  void draw(Canvas canvas, Size size, bool deeper) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(color: paint.color, fontSize: 20),
       ),
-      child: IconButton(
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          shape: const CircleBorder(),
-          side: isActive
-              ? const BorderSide(color: Colors.white, width: 2)
-              : const BorderSide(color: Colors.transparent),
-        ),
-        onPressed: onPressed,
-        icon: child ?? const SizedBox(),
-      ),
+      textDirection: TextDirection.ltr,
     );
+    textPainter.layout();
+    textPainter.paint(canvas, position);
+  }
+
+  @override
+  void startDraw(Offset startPoint) {
+    position = startPoint;
+  }
+
+  @override
+  void drawing(Offset nowPoint) {
+    position = nowPoint;
+  }
+
+  @override
+  TextContent copy() => TextContent(text, position: position, paint: paint);
+
+  @override
+  Map<String, dynamic> toContentJson() {
+    return {
+      'text': text,
+      'position': position.toJson(),
+      'paint': paint.toJson(),
+    };
   }
 }

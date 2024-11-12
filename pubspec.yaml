@@ -32,6 +32,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_drawing_board: ^0.9.5
+  gallery_saver: ^2.3.2
   image_gallery_saver: ^1.7.1
   permission_handler: ^10.2.0
   scribble: ^0.10.0+1
