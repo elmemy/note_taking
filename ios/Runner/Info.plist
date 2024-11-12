@@ -60,5 +60,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>App needs permission to save images to your photo gallery</string>
 </dict>
 </plist>
