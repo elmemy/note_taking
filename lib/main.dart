@@ -295,33 +295,56 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _editTextContent(TextContent textContent) {
     TextEditingController _textController = TextEditingController(text: textContent.text);
+    double _currentFontSize = textContent.fontSize;
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Edit Text'),
-          content: TextField(
-            controller: _textController,
-            decoration: InputDecoration(hintText: "Enter new text"),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('OK'),
-              onPressed: () {
-                setState(() {
-                  textContent.text = _textController.text;
-                });
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Edit Text'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _textController,
+                    decoration: InputDecoration(hintText: "Enter new text"),
+                  ),
+                  SizedBox(height: 10),
+                  Text("Font Size"),
+                  Slider(
+                    value: _currentFontSize,
+                    min: 10,
+                    max: 100,
+                    onChanged: (double value) {
+                      setState(() {
+                        _currentFontSize = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text('OK'),
+                  onPressed: () {
+                    setState(() {
+                      textContent.text = _textController.text;
+                      textContent.fontSize = _currentFontSize;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -495,6 +518,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             final newTextContent = TextContent(
                               "Sample Text",
                               position: Offset(100, 100),
+                              fontSize: 20.0,  // set a default font size here
                               paint: Paint()..color = Colors.black,
                             );
                             _handleTap(newTextContent); // Pass the created TextContent instance
@@ -524,11 +548,12 @@ class _MyHomePageState extends State<MyHomePage> {
 
 
 class TextContent extends PaintContent {
-  TextContent(this.text, {required this.position, required Paint paint})
+  TextContent(this.text, {required this.position, required this.fontSize, required Paint paint})
       : super.paint(paint);
 
   String text;
   Offset position;
+  double fontSize;
 
   @override
   String get contentType => 'TextContent';
@@ -538,7 +563,7 @@ class TextContent extends PaintContent {
     final textPainter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(color: paint.color, fontSize: 20),
+        style: TextStyle(color: paint.color, fontSize: fontSize),
       ),
       textDirection: TextDirection.ltr,
     );
@@ -557,13 +582,14 @@ class TextContent extends PaintContent {
   }
 
   @override
-  TextContent copy() => TextContent(text, position: position, paint: paint);
+  TextContent copy() => TextContent(text, position: position, fontSize: fontSize, paint: paint);
 
   @override
   Map<String, dynamic> toContentJson() {
     return {
       'text': text,
       'position': position.toJson(),
+      'fontSize': fontSize,
       'paint': paint.toJson(),
     };
   }
